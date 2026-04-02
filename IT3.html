@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Momentum Platformer: Large Sprite Build</title>
+    <style>
+        body { 
+            margin: 0; 
+            background-color: #1a1c23; 
+            background-image: url('BG.jpeg');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            color: white; 
+            font-family: sans-serif; 
+            overflow: hidden; 
+            touch-action: none; 
+        }
+        canvas { display: block; width: 100vw; height: 100vh; background: transparent; }
+        #ui { position: absolute; top: 20px; left: 20px; pointer-events: none; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); }
+        .stat { margin-bottom: 5px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 100; cursor: pointer; text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="overlay">
+        <h1>CLICK TO START</h1>
+        <p>Required: 111.png, 222.png, BG.png, and Audio Files</p>
+    </div>
+    
+    <div id="ui">
+        <div class="stat" id="grappleStat">Grapple: READY</div>
+        <div class="stat" id="moveStat">Mode: WALKING</div>
+        <div class="stat" id="audioStat" style="font-size: 10px; color: #00cec9;">Audio: Standby</div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- SPRITE LOADING ---
+        const sprites = {
+            idle: new Image(),
+            move: new Image()
+        };
+        sprites.idle.src = '111.png';
+        sprites.move.src = '222.png';
+
+        // --- AUDIO MANAGER ---
+
+        // --- ASSET MANAGER (Add before other game classes) ---
+class AssetManager {
+    constructor() {
+        this.platformImage = new Image();
+        this.platformImage.src = 'PlatformSprite.png'; // You'll need to create this image
+
+        this.spikeImage = new Image();
+        this.spikeImage.src = 'SpikeSprite.png'; // You'll need to create this image
+
+        this.isPlatformLoaded = false;
+        this.isSpikeLoaded = false;
+
+        this.platformImage.onload = () => { this.isPlatformLoaded = true; };
+        this.spikeImage.onload = () => { this.isSpikeLoaded = true; };
+    }
+
+    // A check to see if we can start drawing
+    isReady() {
+        return this.isPlatformLoaded && this.isSpikeLoaded;
+    }
+}
+
+// Create an instance of the asset manager
+const assets = new AssetManager();
+
+        class AudioManager {
+            constructor() {
+                this.bgmIntro = new Audio('intro.wav');
+                this.bgmLoop = new Audio('loop.wav');
+                this.bgmLoop.loop = true;
+                this.sfx = {
+                    jump: new Audio('jump.wav'),
+                    grapple: new Audio('grapple.wav'),
+                    die: new Audio('die.wav')
+                };
+                this.hasStarted = false;
+                this.bgmIntro.onended = () => this.bgmLoop.play();
+            }
+            start() {
+                if (this.hasStarted) return;
+                this.hasStarted = true;
+                document.getElementById('overlay').style.display = 'none';
+                this.bgmIntro.play().catch(() => this.hasStarted = false);
+            }
+            playSound(name) {
+                if (this.sfx[name]) {
+                    const clone = this.sfx[name].cloneNode();
+                    clone.volume = 0.5;
+                    clone.play().catch(() => {});
+                }
+            }
+        }
+
+        const audio = new AudioManager();
+
+        // --- GAME CONFIG ---
+        const CONFIG = {
+            gravity: 0.5, friction: 0.85, slideFriction: 0.96,
+            airResistance: 0.95, accel: 1.2, jumpForce: -11,
+            superJumpMult: 1.6, grapplePull: 2.2, groundY: 700 
+        };
+
+        let state = { cameraX: 0 };
+        const keys = { Space: false, ArrowLeft: false, ArrowRight: false, ShiftLeft: false, KeyE: false };
+
+// --- Updated Platform and Spike Classes (Drop-in Replacements) ---
+class Platform {
+    constructor(x, y, w, h) {
+        this.x = x; this.y = y; this.w = w; this.h = h;
+        this.corners = [
+            {x: x, y: y}, {x: x + w, y: y},
+            {x: x, y: y + h}, {x: x + w, y: y + h}
+        ];
+    }
+    draw() {
+        // Draw the pixel art platform if it's loaded
+        if (assets.isPlatformLoaded) {
+            ctx.drawImage(assets.platformImage, this.x - state.cameraX, this.y, this.w, this.h);
+        } else {
+            // A fallback while loading
+            ctx.fillStyle = '#1a1c23'; // Matches the fallback background color
+            ctx.fillRect(this.x - state.cameraX, this.y, this.w, this.h);
+        }
+    }
+}
+
+class Spike {
+    constructor(x, y) { this.x = x; this.y = y; this.w = 20; this.h = 20; }
+    draw() {
+        // Draw the pixel art spike if it's loaded
+        if (assets.isSpikeLoaded) {
+            ctx.drawImage(assets.spikeImage, this.x - state.cameraX, this.y, this.w, this.h);
+        } else {
+            // A fallback (simple triangle) while loading
+            ctx.fillStyle = '#e74c3c';
+            ctx.beginPath();
+            ctx.moveTo(this.x - state.cameraX, this.y);
+            ctx.lineTo(this.x + 10 - state.cameraX, this.y - 20);
+            ctx.lineTo(this.x + 20 - state.cameraX, this.y);
+            ctx.fill();
+        }
+    }
+    checkCollision(p) {
+return p.x < this.x + this.w && p.x + p.w > this.x && p.y < this.y + this.h && p.y + p.h > this.y;}
+}
+
+        class Player {
+    constructor() { 
+        this.w = 80; 
+        this.h = 100; 
+        this.reset(); 
+        this.facingLeft = false; 
+    }
+
+    reset() {
+        this.x = 50; 
+        this.y = 400; 
+        this.vx = 0; 
+        this.vy = 0;
+        this.isGrounded = false; 
+        this.isSliding = false;
+        this.canGrapple = true; 
+        this.isGrappling = false;
+        this.grapplePoint = null;
+    }
+
+            update() {
+                if (keys.KeyE && this.canGrapple) {
+                    let closestDist = Infinity;
+                    platforms.forEach(p => {
+                        p.corners.forEach(c => {
+                            let d = Math.sqrt((c.x - this.x)**2 + (c.y - this.y)**2);
+                            if (d < closestDist && d < 450) { closestDist = d; this.grapplePoint = c; this.isGrappling = true; }
+                        });
+                    });
+                    if (this.isGrappling) audio.playSound('grapple');
+                }
+
+                if (this.isGrappling && this.grapplePoint) {
+                    let dx = this.grapplePoint.x - this.x;
+                    let dy = this.grapplePoint.y - this.y;
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist > 20 && keys.KeyE) {
+                        this.vx += (dx / dist) * CONFIG.grapplePull;
+                        this.vy += (dy / dist) * CONFIG.grapplePull;
+                        this.vy *= 0.92;
+                    } else { this.isGrappling = false; this.canGrapple = false; }
+                }
+
+                if (keys.ArrowLeft) { this.vx -= CONFIG.accel; this.facingLeft = true; }
+                if (keys.ArrowRight) { this.vx += CONFIG.accel; this.facingLeft = false; }
+
+                if (keys.ShiftLeft && this.isGrounded) {
+                    this.isSliding = true; 
+                    this.h = 50; // Larger sliding height (proportionally)
+                    this.vx *= CONFIG.slideFriction;
+                } else {
+                    this.isSliding = false; 
+                    this.h = 100; // Larger standing height
+                    this.vx *= this.isGrounded ? CONFIG.friction : CONFIG.airResistance;
+                }
+
+                this.vy += CONFIG.gravity;
+                this.x += this.vx; this.y += this.vy;
+
+                if (this.y + this.h > CONFIG.groundY) { this.y = CONFIG.groundY - this.h; this.vy = 0; this.isGrounded = true; this.canGrapple = true; }
+
+                platforms.forEach(p => {
+                    if (this.x < p.x + p.w && this.x + this.w > p.x && this.y < p.y + p.h && this.y + this.h > p.y) {
+                        let overlapTop = (this.y + this.h) - p.y;
+                        if (overlapTop < 20) { this.y = p.y - this.h; this.vy = 0; this.isGrounded = true; this.canGrapple = true; }
+                    }
+                });
+
+                spikes.forEach(s => { if (s.checkCollision(this)) { audio.playSound('die'); this.reset(); } });
+                state.cameraX += (this.x - canvas.width/2 - state.cameraX) * 0.1;
+
+                const groundLevel = CONFIG.groundY - this.h;
+        if (this.y >= groundLevel) {
+            this.y = groundLevel; // Snaps feet to ground
+            this.vy = 0;
+            this.isGrounded = true;
+            this.canGrapple = true;
+        } else {
+            this.isGrounded = false;
+        }
+
+        // 2. Precise Platform Collision
+        platforms.forEach(p => {
+            // Check if player is within horizontal bounds of platform
+            if (this.x + this.w > p.x && this.x < p.x + p.w) {
+                // Check if player's feet are crossing the top of the platform
+                if (this.vy >= 0 && // Only collide while falling
+                    this.y + this.h > p.y && 
+                    this.y + this.h < p.y + 20) { // 20px tolerance zone
+                    
+                    this.y = p.y - this.h; // Snap feet to platform top
+                    this.vy = 0;
+                    this.isGrounded = true;
+                    this.canGrapple = true;
+                }
+            }
+        });
+            }
+
+            jump() {
+                if (this.isGrounded) {
+                    this.vy = this.isSliding ? CONFIG.jumpForce * CONFIG.superJumpMult : CONFIG.jumpForce;
+                    this.isGrounded = false;
+                    audio.playSound('jump');
+                }
+            }
+
+            draw() {
+        if (this.isGrappling) {
+            ctx.beginPath(); 
+            ctx.moveTo(this.x + this.w/2 - state.cameraX, this.y + this.h/2);
+            ctx.lineTo(this.grapplePoint.x - state.cameraX, this.grapplePoint.y);
+            ctx.strokeStyle = '#00cec9'; ctx.lineWidth = 2; ctx.stroke();
+        }
+
+        let currentSprite = Math.abs(this.vx) < 0.2 ? sprites.idle : sprites.move;
+        
+        ctx.save();
+        // Shift drawing coordinates so the bottom of the sprite matches the hitbox
+        ctx.translate(this.x - state.cameraX + (this.facingLeft ? this.w : 0), this.y);
+        if (this.facingLeft) ctx.scale(-1, 1);
+        
+        // Draw the sprite
+        // Use 0,0 because we already translated to the player's X,Y
+        ctx.drawImage(currentSprite, 0, 0, this.w, this.h);
+        ctx.restore();
+    }
+}
+        const platforms = [
+            new Platform(0, 500, 200, 200), new Platform(400, 350, 150, 30),
+            new Platform(700, 200, 40, 200), new Platform(900, 500, 300, 50)
+        ];
+        const spikes = [new Spike(250, 700), new Spike(280, 700)];
+        const player = new Player();
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'rgba(44, 62, 80, 0.7)'; 
+            ctx.fillRect(0, CONFIG.groundY, canvas.width, canvas.height - CONFIG.groundY);
+            platforms.forEach(p => p.draw());
+            spikes.forEach(s => s.draw());
+            player.update(); player.draw();
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('mousedown', () => audio.start());
+        window.addEventListener('keydown', e => {
+            audio.start();
+            if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
+            if (e.code === 'Space') player.jump();
+        });
+        window.addEventListener('keyup', e => { if (keys.hasOwnProperty(e.code)) keys[e.code] = false; });
+        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+        
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+        animate();
+    </script>
+</body>
+</html>
