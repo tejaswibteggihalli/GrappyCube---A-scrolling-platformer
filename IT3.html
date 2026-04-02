@@ -8,7 +8,7 @@
         body { 
             margin: 0; 
             background-color: #1a1c23; 
-            background-image: url('BG.jpeg');
+            background-image: url('BG.png');
             background-size: cover;
             background-position: center;
             background-attachment: fixed;
@@ -53,32 +53,6 @@
         sprites.move.src = '222.png';
 
         // --- AUDIO MANAGER ---
-
-        // --- ASSET MANAGER (Add before other game classes) ---
-class AssetManager {
-    constructor() {
-        this.platformImage = new Image();
-        this.platformImage.src = 'PlatformSprite.png'; // You'll need to create this image
-
-        this.spikeImage = new Image();
-        this.spikeImage.src = 'SpikeSprite.png'; // You'll need to create this image
-
-        this.isPlatformLoaded = false;
-        this.isSpikeLoaded = false;
-
-        this.platformImage.onload = () => { this.isPlatformLoaded = true; };
-        this.spikeImage.onload = () => { this.isSpikeLoaded = true; };
-    }
-
-    // A check to see if we can start drawing
-    isReady() {
-        return this.isPlatformLoaded && this.isSpikeLoaded;
-    }
-}
-
-// Create an instance of the asset manager
-const assets = new AssetManager();
-
         class AudioManager {
             constructor() {
                 this.bgmIntro = new Audio('intro.wav');
@@ -119,66 +93,48 @@ const assets = new AssetManager();
         let state = { cameraX: 0 };
         const keys = { Space: false, ArrowLeft: false, ArrowRight: false, ShiftLeft: false, KeyE: false };
 
-// --- Updated Platform and Spike Classes (Drop-in Replacements) ---
-class Platform {
-    constructor(x, y, w, h) {
-        this.x = x; this.y = y; this.w = w; this.h = h;
-        this.corners = [
-            {x: x, y: y}, {x: x + w, y: y},
-            {x: x, y: y + h}, {x: x + w, y: y + h}
-        ];
-    }
-    draw() {
-        // Draw the pixel art platform if it's loaded
-        if (assets.isPlatformLoaded) {
-            ctx.drawImage(assets.platformImage, this.x - state.cameraX, this.y, this.w, this.h);
-        } else {
-            // A fallback while loading
-            ctx.fillStyle = '#1a1c23'; // Matches the fallback background color
-            ctx.fillRect(this.x - state.cameraX, this.y, this.w, this.h);
+        class Platform {
+            constructor(x, y, w, h) {
+                this.x = x; this.y = y; this.w = w; this.h = h;
+                this.corners = [{x, y}, {x: x+w, y}, {x, y: y+h}, {x: x+w, y: y+h}];
+            }
+            draw() {
+                ctx.fillStyle = 'rgba(52, 73, 94, 0.9)';
+                ctx.fillRect(this.x - state.cameraX, this.y, this.w, this.h);
+                ctx.strokeStyle = '#1abc9c';
+                ctx.strokeRect(this.x - state.cameraX, this.y, this.w, this.h);
+            }
         }
-    }
-}
 
-class Spike {
-    constructor(x, y) { this.x = x; this.y = y; this.w = 20; this.h = 20; }
-    draw() {
-        // Draw the pixel art spike if it's loaded
-        if (assets.isSpikeLoaded) {
-            ctx.drawImage(assets.spikeImage, this.x - state.cameraX, this.y, this.w, this.h);
-        } else {
-            // A fallback (simple triangle) while loading
-            ctx.fillStyle = '#e74c3c';
-            ctx.beginPath();
-            ctx.moveTo(this.x - state.cameraX, this.y);
-            ctx.lineTo(this.x + 10 - state.cameraX, this.y - 20);
-            ctx.lineTo(this.x + 20 - state.cameraX, this.y);
-            ctx.fill();
+        class Spike {
+            constructor(x, y) { this.x = x; this.y = y; this.w = 20; this.h = 20; }
+            draw() {
+                ctx.fillStyle = '#e74c3c';
+                ctx.beginPath();
+                ctx.moveTo(this.x - state.cameraX, this.y);
+                ctx.lineTo(this.x + 10 - state.cameraX, this.y - 20);
+                ctx.lineTo(this.x + 20 - state.cameraX, this.y);
+                ctx.fill();
+            }
+            checkCollision(p) {
+                return (p.x < this.x + 15 && p.x + p.w > this.x + 5 && p.y < this.y && p.y + p.h > this.y - 15);
+            }
         }
-    }
-    checkCollision(p) {
-return p.x < this.x + this.w && p.x + p.w > this.x && p.y < this.y + this.h && p.y + p.h > this.y;}
-}
 
         class Player {
-    constructor() { 
-        this.w = 80; 
-        this.h = 100; 
-        this.reset(); 
-        this.facingLeft = false; 
-    }
-
-    reset() {
-        this.x = 50; 
-        this.y = 400; 
-        this.vx = 0; 
-        this.vy = 0;
-        this.isGrounded = false; 
-        this.isSliding = false;
-        this.canGrapple = true; 
-        this.isGrappling = false;
-        this.grapplePoint = null;
-    }
+            constructor() { 
+                // Large Sprite implementation: increased dimensions
+                this.w = 80; // Larger width
+                this.h = 100; // Larger height
+                this.reset(); 
+                this.facingLeft = false; 
+            }
+            reset() {
+                this.x = 50; this.y = 400; this.vx = 0; this.vy = 0;
+                this.isGrounded = false; this.isSliding = false;
+                this.canGrapple = true; this.isGrappling = false;
+                this.grapplePoint = null;
+            }
 
             update() {
                 if (keys.KeyE && this.canGrapple) {
@@ -230,33 +186,6 @@ return p.x < this.x + this.w && p.x + p.w > this.x && p.y < this.y + this.h && p
 
                 spikes.forEach(s => { if (s.checkCollision(this)) { audio.playSound('die'); this.reset(); } });
                 state.cameraX += (this.x - canvas.width/2 - state.cameraX) * 0.1;
-
-                const groundLevel = CONFIG.groundY - this.h;
-        if (this.y >= groundLevel) {
-            this.y = groundLevel; // Snaps feet to ground
-            this.vy = 0;
-            this.isGrounded = true;
-            this.canGrapple = true;
-        } else {
-            this.isGrounded = false;
-        }
-
-        // 2. Precise Platform Collision
-        platforms.forEach(p => {
-            // Check if player is within horizontal bounds of platform
-            if (this.x + this.w > p.x && this.x < p.x + p.w) {
-                // Check if player's feet are crossing the top of the platform
-                if (this.vy >= 0 && // Only collide while falling
-                    this.y + this.h > p.y && 
-                    this.y + this.h < p.y + 20) { // 20px tolerance zone
-                    
-                    this.y = p.y - this.h; // Snap feet to platform top
-                    this.vy = 0;
-                    this.isGrounded = true;
-                    this.canGrapple = true;
-                }
-            }
-        });
             }
 
             jump() {
@@ -268,26 +197,27 @@ return p.x < this.x + this.w && p.x + p.w > this.x && p.y < this.y + this.h && p
             }
 
             draw() {
-        if (this.isGrappling) {
-            ctx.beginPath(); 
-            ctx.moveTo(this.x + this.w/2 - state.cameraX, this.y + this.h/2);
-            ctx.lineTo(this.grapplePoint.x - state.cameraX, this.grapplePoint.y);
-            ctx.strokeStyle = '#00cec9'; ctx.lineWidth = 2; ctx.stroke();
+                // Draw Grapple Line
+                if (this.isGrappling) {
+                    ctx.beginPath(); ctx.moveTo(this.x + this.w/2 - state.cameraX, this.y + this.h/2);
+                    ctx.lineTo(this.grapplePoint.x - state.cameraX, this.grapplePoint.y);
+                    ctx.strokeStyle = '#00cec9'; ctx.lineWidth = 2; ctx.stroke();
+                }
+
+                // Determine Sprite: Idle if velocity is low, otherwise moving
+                let currentSprite = Math.abs(this.vx) < 0.2 ? sprites.idle : sprites.move;
+                
+                // Handle horizontal flipping for sprites
+                ctx.save();
+                ctx.translate(this.x - state.cameraX + (this.facingLeft ? this.w : 0), this.y);
+                if (this.facingLeft) ctx.scale(-1, 1);
+                
+                // Draw the sprite using the larger dimensions
+                ctx.drawImage(currentSprite, 0, 0, this.w, this.h);
+                ctx.restore();
+            }
         }
 
-        let currentSprite = Math.abs(this.vx) < 0.2 ? sprites.idle : sprites.move;
-        
-        ctx.save();
-        // Shift drawing coordinates so the bottom of the sprite matches the hitbox
-        ctx.translate(this.x - state.cameraX + (this.facingLeft ? this.w : 0), this.y);
-        if (this.facingLeft) ctx.scale(-1, 1);
-        
-        // Draw the sprite
-        // Use 0,0 because we already translated to the player's X,Y
-        ctx.drawImage(currentSprite, 0, 0, this.w, this.h);
-        ctx.restore();
-    }
-}
         const platforms = [
             new Platform(0, 500, 200, 200), new Platform(400, 350, 150, 30),
             new Platform(700, 200, 40, 200), new Platform(900, 500, 300, 50)
